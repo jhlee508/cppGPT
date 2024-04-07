@@ -15,7 +15,7 @@ python tools/download_gpt2_model.py
 python tools/dump_tf_model.py 
 ```
 
-## Run
+## Build & Run
 
 ```bash
 make
