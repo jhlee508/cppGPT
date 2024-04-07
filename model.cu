@@ -7,32 +7,41 @@
 
 
 /* [Parameters] */
-/* 'blocks': 12 Transformer Blocks in Model */
+/* 12 Transformer Blocks in Model */
 Tensor *attn_b[N_LAYER], *attn_w[N_LAYER];
 Tensor *proj_b[N_LAYER], *proj_w[N_LAYER];
 Tensor *ln_1_b[N_LAYER], *ln_1_g[N_LAYER];
 Tensor *ln_2_b[N_LAYER], *ln_2_g[N_LAYER];
 Tensor *mlp1_b[N_LAYER], *mlp1_w[N_LAYER];
 Tensor *mlp2_b[N_LAYER], *mlp2_w[N_LAYER];
-/* 'ln_f': Final Layer Normalization */
+/* Final Layer Normalization */
 Tensor *ln_f_b, *ln_f_g;
-/* 'wpe' & 'wte': Word Positional and Token Embedding */
+/* Word Positional and Token Embedding */
 Tensor *wpe, *wte;
 
 /* [Activations] */
 Tensor *embd;
 Tensor *ffn_proj_act;
-Tensor *mha_Wqkv_out_act, *mha_out_act, *mha_qkv_act, *mha_qkv_head_act;
+Tensor *mha_Wqkv_out_act;
+Tensor *mha_out_act;
+Tensor *mha_qkv_act;
+Tensor *mha_qkv_head_act;
 Tensor *mha_mask;
-Tensor *mha_q_act, *mha_k_act, *mha_v_act;
 Tensor *mha_out_head_act;
+Tensor *mha_q_act;
+Tensor *mha_k_act;
+Tensor *mha_v_act;
 Tensor *mha_attn_out_act;
 Tensor *mha_concat_head_act;
-Tensor *attn_score_act, *zero_seq_act;
-Tensor *wte_T_act, *zero_vocab_act;
+Tensor *attn_score_act;
+Tensor *zero_seq_act;
+Tensor *k_T_act;
+Tensor *zero_dv_act;
+Tensor *wte_T_act;
+Tensor *zero_vocab_act;
 Tensor *residual_act;
-Tensor *tx_block_out_act;
 Tensor *logits_out_act;
+Tensor *tx_block_out_act;
 
 
 /* [Model Initialization] */
@@ -93,6 +102,8 @@ void initialize_model(const char* param_fname) {
     // Attention
     attn_score_act = new Tensor({N_SEQ, N_SEQ});
     zero_seq_act = new Tensor({N_SEQ});
+    k_T_act = new Tensor({N_EMBD/N_HEAD, N_SEQ});
+    zero_dv_act = new Tensor({N_EMBD/N_HEAD});
 
     // Projection to vocab dimension 
     wte_T_act = new Tensor({N_EMBD, N_VOCAB});
@@ -268,18 +279,13 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
                Tensor* mask, 
                Tensor* out) {
 
-    int N_Q = q->shape[0];
-    int N_K = k->shape[0];
+    int N_Q = q->shape[0]; 
+    int N_K = k->shape[0]; 
     int D_K = k->shape[1];
-    int D_V = v->shape[1];
-
-    Tensor* k_T = new Tensor({D_K, N_K});
 
     /* q @ k.T */
-    transpose(k, k_T);
-    linear(q, k_T, zero_seq_act, attn_score_act);
-
-    delete k_T;
+    transpose(k, k_T_act);
+    linear(q, k_T_act, zero_seq_act, attn_score_act);
 
     /* Elem-wise scaling */    
     for (int i = 0; i < N_Q; i++) {
@@ -300,9 +306,7 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
     softmax(attn_score_act);
 
     /* attn_score_act @ v */
-    Tensor* zero_bias = new Tensor({D_V});
-    linear(attn_score_act, v, zero_bias, out);
-    delete zero_bias;
+    linear(attn_score_act, v, zero_dv_act, out);
 } 
 
 /* (Masked) Multi-Head Self Attention 
@@ -546,7 +550,9 @@ void finalize_model() {
     delete mha_concat_head_act;
     delete attn_score_act;
     delete zero_seq_act;
+    delete k_T_act;
     delete wte_T_act;
+    delete zero_dv_act;
     delete zero_vocab_act;
     delete residual_act;
     delete logits_out_act;
