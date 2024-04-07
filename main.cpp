@@ -58,29 +58,8 @@ int main(int argc, char **argv) {
     assert(N_SEQ + T <= N_CTX);
 
     /* Text Generation */
-    for (int i = 0; i < T; i++) {
-        Tensor* logits = new Tensor({N_SEQ, N_VOCAB});
-        
-        /* This function is implemented in 'model.cu' file */
-        logits = generate_tokens(example_input);
-        
-        /* Greedy sampling (the last timestep only) */
-        int next_token_id = 0;
-        float max_val = -INFINITY;
-        for (int j = 0; j < N_VOCAB; j++) {
-            if (logits->buf[(N_SEQ-1)*N_VOCAB + j] > max_val) {
-                max_val = logits->buf[(N_SEQ-1)*N_VOCAB + j];
-                next_token_id = j;
-            }
-        }
-        fprintf(stdout, ">>> Next token ID: %d\n", next_token_id);
-
-        /* Append next_token id to input */
-        example_input.push_back(next_token_id);
-
-        /* Remove the first token */
-        example_input.erase(example_input.begin());
-    } 
+    fprintf(stdout, " Generating tokens... \n");
+    generate_tokens(example_input, T);
 
     et = get_time();
     fprintf(stdout, " Done!\n");

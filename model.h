@@ -29,4 +29,4 @@ static int N_SEQ = 10;
 
 void initialize_model(const char* param_fname);
 void finalize_model();
-Tensor* generate_tokens(vector<int> input);
+void generate_tokens(vector<int> input, int n_token);

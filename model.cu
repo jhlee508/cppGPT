@@ -6,11 +6,6 @@
 #include "util.h"
 
 
-/* Comment out to disable debug and log prints */
-// #define DEBUG
-// #define LOG
-
-
 /* [Parameters] */
 /* 'blocks': 12 Transformer Blocks in Model */
 Tensor *attn_b[N_LAYER], *attn_w[N_LAYER];
@@ -49,8 +44,7 @@ void initialize_model(const char* param_fname) {
 
     /* Loading parameters */
     size_t pos = 0;
-
-    // The stored order of OpenAI's GPT2-small params are not sequential
+    /* (The stored order of OpenAI's GPT2-small parameter checkpoints) */
     int order[] = {0, 1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, };
     for (int i = 0; i < N_LAYER; i++) {
         attn_b[order[i]] = new Tensor({3*N_EMBD}, param + pos); pos += OFFSET1;
@@ -121,24 +115,12 @@ void token_pos_embedding(vector<int> x,
                          Tensor* wte, Tensor* wpe, 
                          Tensor* x_out) {
 
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Token + Positional Embedding...\n");
-    #endif
-
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < N_EMBD; j++) {
             x_out->buf[i*N_EMBD + j] = 
             wte->buf[x[i]*N_EMBD + j] + wpe->buf[i*N_EMBD + j];
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] T+P Embedding Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* GELU 
@@ -146,10 +128,6 @@ void token_pos_embedding(vector<int> x,
  * @param [x] output: [N_SEQ, 4*N_EMBD]
  */
 void gelu(Tensor* x) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] GELU...\n");
-    #endif
 
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < 4*N_EMBD; j++) {
@@ -159,14 +137,6 @@ void gelu(Tensor* x) {
                 x->buf[i*4*N_EMBD + j])));
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] GELU Output shape: [%d, %d]\n", x->shape[0], x->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Softmax (w/ Max Trick)
@@ -174,10 +144,6 @@ void gelu(Tensor* x) {
  * @param [x] output: [N, D]
  */
 void softmax(Tensor* x) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Softmax...\n");
-    #endif
 
     int N = x->shape[0];
     int D = x->shape[1];
@@ -198,14 +164,6 @@ void softmax(Tensor* x) {
             x->buf[i*D + j] /= sum;
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] Softmax Output shape: [%d, %d]\n", x->shape[0], x->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Layer Normalization
@@ -216,10 +174,6 @@ void softmax(Tensor* x) {
  */
 void layer_norm(Tensor* x, 
                 Tensor* gamma, Tensor* beta) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Layer Normalization...\n");
-    #endif
 
     float eps = 1e-5;
     for (int i = 0; i < N_SEQ; i++) {
@@ -236,14 +190,6 @@ void layer_norm(Tensor* x,
             (1.0 / sqrt(var + eps)) * gamma->buf[j] + beta->buf[j];
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] LayerNorm Output shape: [%d, %d]\n", x->shape[0], x->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Linear 
@@ -255,10 +201,6 @@ void layer_norm(Tensor* x,
 void linear(Tensor* x, 
             Tensor* w, Tensor* b, 
             Tensor* x_out) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Linear...\n");
-    #endif
 
     int M = x->shape[0];
     int IN = x->shape[1];
@@ -273,14 +215,6 @@ void linear(Tensor* x,
             x_out->buf[i*OUT + j] += b->buf[j];
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] Linear Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Transpose
@@ -290,10 +224,6 @@ void linear(Tensor* x,
 void transpose(Tensor* x, 
                Tensor* x_out) {
 
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Transpose...\n");
-    #endif
-
     int M = x->shape[0];
     int N = x->shape[1];
 
@@ -302,14 +232,6 @@ void transpose(Tensor* x,
             x_out->buf[j*M + i] = x->buf[i*N + j];
         }
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] Transpose Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-#endif
 }
 
 /* (Position-wise) Feed-Forward Network
@@ -324,10 +246,6 @@ void ffn(Tensor* x,
          Tensor* mlp1_w, Tensor* mlp1_b, 
          Tensor* mlp2_w, Tensor* mlp2_b, 
          Tensor* x_out) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Feed-Forward Network...\n");
-    #endif
     
     /* Projection Up [N_SEQ, N_EMBD] -> [N_SEQ, 4*N_EMBD] */
     linear(x, mlp1_w, mlp1_b, ffn_proj_act);
@@ -337,14 +255,6 @@ void ffn(Tensor* x,
 
     /* Projection Down [N_SEQ, 4*N_EMBD] -> [N_SEQ, N_EMBD] */
     linear(ffn_proj_act, mlp2_w, mlp2_b, x_out);
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] FFN Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Attention
@@ -357,9 +267,6 @@ void ffn(Tensor* x,
 void attention(Tensor* q, Tensor* k, Tensor* v, 
                Tensor* mask, 
                Tensor* out) {
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Attention...\n");
-    #endif
 
     int N_Q = q->shape[0];
     int N_K = k->shape[0];
@@ -396,14 +303,6 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
     Tensor* zero_bias = new Tensor({D_V});
     linear(attn_score_act, v, zero_bias, out);
     delete zero_bias;
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] ATTN Output shape: [%d, %d]\n", out->shape[0], out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 } 
 
 /* (Masked) Multi-Head Self Attention 
@@ -412,16 +311,12 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
  * @param [attn_w] input: [N_EMBD, 3*N_EMBD]
  * @param [proj_b] input: [N_EMBD]
  * @param [proj_w] input: [N_EMBD, N_EMBD]
- * @param [x] output: [N_SEQ, N_EMBD]
+ * @param [x_out] output: [N_SEQ, N_EMBD]
  */
 void mha(Tensor* x, 
     Tensor* attn_b, Tensor* attn_w, 
     Tensor* proj_b, Tensor* proj_w, 
     Tensor* x_out) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Multi-Head Self Attention...\n");
-    #endif
 
     /* QKV projection: [n_seq, n_embd] -> [n_seq, 3*n_embd]) */
     linear(x, attn_w, attn_b, mha_Wqkv_out_act);
@@ -498,14 +393,6 @@ void mha(Tensor* x,
 
     /* OUT projection [n_seq, n_embd] -> [n_seq, n_embd] */
     linear(mha_concat_head_act, proj_w, proj_b, x_out);
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] MHA Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 /* Transformer Block
@@ -532,10 +419,6 @@ void transformer_block(Tensor* x,
     Tensor* mlp1_b, Tensor* mlp1_w, 
     Tensor* mlp2_b, Tensor* mlp2_w,
     Tensor* x_out) {
-
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Transformer Block...\n");
-    #endif
 
     /* Copy Residual */
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
@@ -568,60 +451,59 @@ void transformer_block(Tensor* x,
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
         x_out->buf[i] += residual_act->buf[i];
     }
-
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] Transformer Block Output shape: [%d, %d]\n", x_out->shape[0], x_out->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", x_out->buf[i]);
-        }
-        fprintf(stderr, "\n");
-    #endif
 }
 
 
 /* [Token Generation] */
-Tensor* generate_tokens(vector<int> input) {
+void generate_tokens(vector<int> input, int n_token) {
 
-    #ifdef LOG
-        fprintf(stderr, "[LOG] Generating tokens...\n");
-    #endif
-    
-    /* Token + Positional Embedding */
-    token_pos_embedding(input, wte, wpe, embd);
+    /* Iteratively generate next token */
+    for (int t = 0; t < n_token; t++) {
 
-    /* Forward path through Transformer layers [n_seq, n_embd] -> [n_seq, n_embd] */
-    for (int i = 0; i < N_LAYER; i++) {
-        transformer_block(embd, 
-        attn_b[i], attn_w[i], 
-        proj_b[i], proj_w[i], 
-        ln_1_b[i], ln_1_g[i], 
-        ln_2_b[i], ln_2_g[i], 
-        mlp1_b[i], mlp1_w[i], 
-        mlp2_b[i], mlp2_w[i], 
-        tx_block_out_act);
+        /* Token + Positional Embedding */
+        token_pos_embedding(input, wte, wpe, embd);
 
-        /* Copy output to embd for next layer */
-        for (int j = 0; j < N_SEQ*N_EMBD; j++) {
-            embd->buf[j] = tx_block_out_act->buf[j];
+        /* Forward path through Transformer layers */
+        for (int i = 0; i < N_LAYER; i++) {
+            transformer_block(embd, 
+                attn_b[i], attn_w[i], 
+                proj_b[i], proj_w[i], 
+                ln_1_b[i], ln_1_g[i], 
+                ln_2_b[i], ln_2_g[i], 
+                mlp1_b[i], mlp1_w[i], 
+                mlp2_b[i], mlp2_w[i], 
+                tx_block_out_act);
+
+            /* Copy output to embd for next layer */
+            for (int j = 0; j < N_SEQ*N_EMBD; j++) {
+                embd->buf[j] = tx_block_out_act->buf[j];
+            }
         }
-    }
 
-    /* Final LayerNorm */
-    layer_norm(embd, ln_f_g, ln_f_b);
+        /* Final LayerNorm */
+        layer_norm(embd, ln_f_g, ln_f_b);
 
-    /* Projection to Vocab Dimension [n_seq, n_embd] @ [n_embd, n_vocab] + [n_vocab] -> [n_seq, n_vocab] */
-    transpose(wte, wte_T_act);
-    linear(embd, wte_T_act, zero_vocab_act, logits_out_act);
+        /* Projection to vocab dimension */
+        transpose(wte, wte_T_act);
+        linear(embd, wte_T_act, zero_vocab_act, logits_out_act);
 
-    #ifdef DEBUG
-        fprintf(stderr, "[DEBUG] Logits Output shape: [%d, %d]\n", logits_out_act->shape[0], logits_out_act->shape[1]);
-        for (int i = 0; i < 4; i++) {
-            fprintf(stderr, " %f ", logits_out_act->buf[i]);
+        /* Greedy sampling (only last timestep is considered) */
+        int next_token_id = -1;
+        float max_val = -INFINITY;
+        for (int i = 0; i < N_VOCAB; i++) {
+            if (logits_out_act->buf[(N_SEQ-1)*N_VOCAB + i] > max_val) {
+                max_val = logits_out_act->buf[(N_SEQ-1)*N_VOCAB + i];
+                next_token_id = i;
+            }
         }
-        fprintf(stderr, "\n");
-    #endif
 
-    return logits_out_act;
+        /* Print generated token */
+        printf(" >>> Next token ID: %d\n", next_token_id);
+
+        /* Update input for next iteration */
+        input.push_back(next_token_id);
+        input.erase(input.begin());
+    }   
 }
 
 
