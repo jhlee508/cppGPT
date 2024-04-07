@@ -61,6 +61,7 @@ void parse_args(int argc, char **argv) {
     fprintf(stdout, " Warmup: %s\n", W ? "ON" : "OFF");
     fprintf(stdout, " Validation: %s\n", V ? "ON" : "OFF");
     fprintf(stdout, " Save output: %s\n", S ? "ON" : "OFF");
+    fprintf(stdout, " Number of Tokens: %d\n", T);
     fprintf(stdout, "=============================================\n\n");
 }
 
