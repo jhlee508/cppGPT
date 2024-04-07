@@ -1,0 +1,7 @@
+# model files
+assets/*
+
+# outputs
+main
+*.o
+*.out
