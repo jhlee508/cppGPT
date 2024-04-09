@@ -1,4 +1,3 @@
-#include <cmath>
 #include <cstdio>
 #include <cmath>
 
@@ -21,27 +20,27 @@ Tensor *wpe, *wte;
 
 /* [Activations] */
 Tensor *embd;
-Tensor *ffn_proj_act;
-Tensor *mha_Wqkv_out_act;
-Tensor *mha_out_act;
-Tensor *mha_qkv_act;
-Tensor *mha_qkv_head_act;
-Tensor *mha_mask;
-Tensor *mha_out_head_act;
-Tensor *mha_q_act;
-Tensor *mha_k_act;
-Tensor *mha_v_act;
-Tensor *mha_attn_out_act;
-Tensor *mha_concat_head_act;
-Tensor *attn_score_act;
-Tensor *zero_seq_act;
-Tensor *k_T_act;
-Tensor *zero_dv_act;
-Tensor *wte_T_act;
-Tensor *zero_vocab_act;
-Tensor *residual_act;
-Tensor *logits_out_act;
-Tensor *tx_block_out_act;
+Tensor *ffn_proj_output;
+Tensor *mha_qkv_output;
+Tensor *mha_output;
+Tensor *mha_qkv_tmp;
+Tensor *mha_qkv_head_tmp;
+Tensor *mha_mask_tmp;
+Tensor *mha_merge_head_tmp;
+Tensor *mha_q_tmp;
+Tensor *mha_k_tmp;
+Tensor *mha_v_tmp;
+Tensor *mha_attn_output;
+Tensor *mha_concat_head_tmp;
+Tensor *attn_score_output;
+Tensor *zero_seq_tmp;
+Tensor *k_transposed_tmp;
+Tensor *zero_dv_tmp;
+Tensor *wte_transposed_tmp;
+Tensor *zero_vocab_tmp;
+Tensor *residual_tmp;
+Tensor *logit_output;
+Tensor *transformer_block_output;
 
 
 /* [Model Initialization] */
@@ -84,35 +83,35 @@ void initialize_model(const char* param_fname) {
     embd = new Tensor({N_SEQ, N_EMBD});
 
     // FFN
-    ffn_proj_act = new Tensor({N_SEQ, 4*N_EMBD});
+    ffn_proj_output = new Tensor({N_SEQ, 4*N_EMBD});
 
     // MHA
-    mha_Wqkv_out_act = new Tensor({N_SEQ, 3*N_EMBD});
-    mha_out_act = new Tensor({N_SEQ, N_EMBD});
-    mha_qkv_act = new Tensor({3, N_SEQ, N_EMBD});
-    mha_qkv_head_act = new Tensor({3, N_HEAD, N_SEQ, N_EMBD/N_HEAD});
-    mha_mask = new Tensor({N_SEQ, N_SEQ});
-    mha_out_head_act = new Tensor({N_HEAD, N_SEQ, N_EMBD/N_HEAD});
-    mha_q_act = new Tensor({N_SEQ, N_EMBD/N_HEAD});
-    mha_k_act = new Tensor({N_SEQ, N_EMBD/N_HEAD});
-    mha_v_act = new Tensor({N_SEQ, N_EMBD/N_HEAD});
-    mha_attn_out_act = new Tensor({N_SEQ, N_EMBD/N_HEAD});
-    mha_concat_head_act = new Tensor({N_SEQ, N_EMBD});
+    mha_qkv_output = new Tensor({N_SEQ, 3*N_EMBD});
+    mha_output = new Tensor({N_SEQ, N_EMBD});
+    mha_qkv_tmp = new Tensor({3, N_SEQ, N_EMBD});
+    mha_qkv_head_tmp = new Tensor({3, N_HEAD, N_SEQ, N_EMBD/N_HEAD});
+    mha_mask_tmp = new Tensor({N_SEQ, N_SEQ});
+    mha_merge_head_tmp = new Tensor({N_HEAD, N_SEQ, N_EMBD/N_HEAD});
+    mha_q_tmp = new Tensor({N_SEQ, N_EMBD/N_HEAD});
+    mha_k_tmp = new Tensor({N_SEQ, N_EMBD/N_HEAD});
+    mha_v_tmp = new Tensor({N_SEQ, N_EMBD/N_HEAD});
+    mha_attn_output = new Tensor({N_SEQ, N_EMBD/N_HEAD});
+    mha_concat_head_tmp = new Tensor({N_SEQ, N_EMBD});
 
     // Attention
-    attn_score_act = new Tensor({N_SEQ, N_SEQ});
-    zero_seq_act = new Tensor({N_SEQ});
-    k_T_act = new Tensor({N_EMBD/N_HEAD, N_SEQ});
-    zero_dv_act = new Tensor({N_EMBD/N_HEAD});
+    attn_score_output = new Tensor({N_SEQ, N_SEQ});
+    zero_seq_tmp = new Tensor({N_SEQ});
+    k_transposed_tmp = new Tensor({N_EMBD/N_HEAD, N_SEQ});
+    zero_dv_tmp = new Tensor({N_EMBD/N_HEAD});
 
     // Projection to vocab dimension 
-    wte_T_act = new Tensor({N_EMBD, N_VOCAB});
-    zero_vocab_act = new Tensor({N_VOCAB});
+    wte_transposed_tmp = new Tensor({N_EMBD, N_VOCAB});
+    zero_vocab_tmp = new Tensor({N_VOCAB});
 
     // Transformer block
-    residual_act = new Tensor({N_SEQ, N_EMBD});
-    logits_out_act = new Tensor({N_SEQ, N_VOCAB}); 
-    tx_block_out_act = new Tensor({N_SEQ, N_EMBD});
+    residual_tmp = new Tensor({N_SEQ, N_EMBD});
+    logit_output = new Tensor({N_SEQ, N_VOCAB}); 
+    transformer_block_output = new Tensor({N_SEQ, N_EMBD});
 }
 
 
@@ -259,13 +258,13 @@ void ffn(Tensor* x,
          Tensor* x_out) {
     
     /* Projection Up [N_SEQ, N_EMBD] -> [N_SEQ, 4*N_EMBD] */
-    linear(x, mlp1_w, mlp1_b, ffn_proj_act);
+    linear(x, mlp1_w, mlp1_b, ffn_proj_output);
 
     /* GELU */
-    gelu(ffn_proj_act);
+    gelu(ffn_proj_output);
 
     /* Projection Down [N_SEQ, 4*N_EMBD] -> [N_SEQ, N_EMBD] */
-    linear(ffn_proj_act, mlp2_w, mlp2_b, x_out);
+    linear(ffn_proj_output, mlp2_w, mlp2_b, x_out);
 }
 
 /* Attention
@@ -284,29 +283,29 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
     int D_K = k->shape[1];
 
     /* q @ k.T */
-    transpose(k, k_T_act);
-    linear(q, k_T_act, zero_seq_act, attn_score_act);
+    transpose(k, k_transposed_tmp);
+    linear(q, k_transposed_tmp, zero_seq_tmp, attn_score_output);
 
     /* Elem-wise scaling */    
     for (int i = 0; i < N_Q; i++) {
         for (int j = 0; j < N_K; j++) {
-            attn_score_act->buf[i*N_K + j] /= sqrt(D_K);
+            attn_score_output->buf[i*N_K + j] /= sqrt(D_K);
         }
     }
 
     /* Apply mask */
     for (int i = 0; i < N_Q; i++) {
         for (int j = 0; j < N_K; j++) {
-            attn_score_act->buf[i*N_K + j] += 
+            attn_score_output->buf[i*N_K + j] += 
                 mask->buf[i*N_K + j];
         }
     }
 
     /* softmax */
-    softmax(attn_score_act);
+    softmax(attn_score_output);
 
-    /* attn_score_act @ v */
-    linear(attn_score_act, v, zero_dv_act, out);
+    /* attn_score_output @ v */
+    linear(attn_score_output, v, zero_dv_tmp, out);
 } 
 
 /* (Masked) Multi-Head Self Attention 
@@ -323,14 +322,14 @@ void mha(Tensor* x,
     Tensor* x_out) {
 
     /* QKV projection: [n_seq, n_embd] -> [n_seq, 3*n_embd]) */
-    linear(x, attn_w, attn_b, mha_Wqkv_out_act);
+    linear(x, attn_w, attn_b, mha_qkv_output);
 
     /* Split into qkv: [n_seq, 3*n_embd] -> [3, n_seq, n_embd] */
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < N_SEQ; j++) {
             for (int k = 0; k < N_EMBD; k++) {
-                mha_qkv_act->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
-                    mha_Wqkv_out_act->buf[j*3*N_EMBD + i*N_EMBD + k];
+                mha_qkv_tmp->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
+                    mha_qkv_output->buf[j*3*N_EMBD + i*N_EMBD + k];
             }
         }
     }
@@ -340,8 +339,8 @@ void mha(Tensor* x,
         for (int j = 0; j < N_HEAD; j++) {
             for (int k = 0; k < N_SEQ; k++) {
                 for (int l = 0; l < N_EMBD/N_HEAD; l++) {
-                    mha_qkv_head_act->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
-                        mha_qkv_act->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
+                    mha_qkv_head_tmp->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
+                        mha_qkv_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
                 }
             }
         }
@@ -351,9 +350,9 @@ void mha(Tensor* x,
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < N_SEQ; j++) {
             if (i >= j) {
-                mha_mask->buf[i*N_SEQ + j] = 0;
+                mha_mask_tmp->buf[i*N_SEQ + j] = 0;
             } else {
-                mha_mask->buf[i*N_SEQ + j] = -1e10;
+                mha_mask_tmp->buf[i*N_SEQ + j] = -1e10;
             }
         }
     }
@@ -364,23 +363,23 @@ void mha(Tensor* x,
         /* Extract q, k, v from qkv_head */
         for (int j = 0; j < N_SEQ; j++) {
             for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_q_act->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_act->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
-                mha_k_act->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_act->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
-                mha_v_act->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_act->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
+                mha_q_tmp->buf[j*N_EMBD/N_HEAD + k] = 
+                    mha_qkv_head_tmp->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
+                mha_k_tmp->buf[j*N_EMBD/N_HEAD + k] = 
+                    mha_qkv_head_tmp->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
+                mha_v_tmp->buf[j*N_EMBD/N_HEAD + k] = 
+                    mha_qkv_head_tmp->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
             }
         }
 
         /* Attention */
-        attention(mha_q_act, mha_k_act, mha_v_act, mha_mask, mha_attn_out_act);
+        attention(mha_q_tmp, mha_k_tmp, mha_v_tmp, mha_mask_tmp, mha_attn_output);
 
         /* Merge each head's attn output [n_seq, n_embd/n_head] -> [n_head, n_seq, n_embd/n_head] */
         for (int j = 0; j < N_SEQ; j++) {
             for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_out_head_act->buf[i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k] = 
-                    mha_attn_out_act->buf[j*N_EMBD/N_HEAD + k];
+                mha_merge_head_tmp->buf[i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k] = 
+                    mha_attn_output->buf[j*N_EMBD/N_HEAD + k];
             }
         }
     }
@@ -389,14 +388,14 @@ void mha(Tensor* x,
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < N_HEAD; j++) {
             for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_concat_head_act->buf[i*N_EMBD + j*N_EMBD/N_HEAD + k] = 
-                    mha_out_head_act->buf[j*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + k];
+                mha_concat_head_tmp->buf[i*N_EMBD + j*N_EMBD/N_HEAD + k] = 
+                    mha_merge_head_tmp->buf[j*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + k];
             }
         }
     }
 
     /* OUT projection [n_seq, n_embd] -> [n_seq, n_embd] */
-    linear(mha_concat_head_act, proj_w, proj_b, x_out);
+    linear(mha_concat_head_tmp, proj_w, proj_b, x_out);
 }
 
 /* Transformer Block
@@ -426,34 +425,34 @@ void transformer_block(Tensor* x,
 
     /* Copy Residual */
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        residual_act->buf[i] = x->buf[i];
+        residual_tmp->buf[i] = x->buf[i];
     }
 
     /* Layer Normalization */
     layer_norm(x, ln_1_g, ln_1_b);
 
     /* Masked Multi-Head Self Attention */
-    mha(x, attn_b, attn_w, proj_b, proj_w, mha_out_act);
+    mha(x, attn_b, attn_w, proj_b, proj_w, mha_output);
 
     /* Add Residual */
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        mha_out_act->buf[i] += residual_act->buf[i];
+        mha_output->buf[i] += residual_tmp->buf[i];
     }   
 
     /* Copy Residual */
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        residual_act->buf[i] = mha_out_act->buf[i];
+        residual_tmp->buf[i] = mha_output->buf[i];
     }
 
     /* Layer Normalization */
-    layer_norm(mha_out_act, ln_2_g, ln_2_b);
+    layer_norm(mha_output, ln_2_g, ln_2_b);
 
     /* Position-wise Feed-Forward Network */
-    ffn(mha_out_act, mlp1_w, mlp1_b, mlp2_w, mlp2_b, x_out);
+    ffn(mha_output, mlp1_w, mlp1_b, mlp2_w, mlp2_b, x_out);
 
     /* Add Residual */
     for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        x_out->buf[i] += residual_act->buf[i];
+        x_out->buf[i] += residual_tmp->buf[i];
     }
 }
 
@@ -467,7 +466,7 @@ void generate_tokens(vector<int> input, int n_token) {
         /* Token + Positional Embedding */
         token_pos_embedding(input, wte, wpe, embd);
 
-        /* Forward path through Transformer layers */
+        /* Forward path through Transformer blocks */
         for (int i = 0; i < N_LAYER; i++) {
             transformer_block(embd, 
                 attn_b[i], attn_w[i], 
@@ -476,33 +475,33 @@ void generate_tokens(vector<int> input, int n_token) {
                 ln_2_b[i], ln_2_g[i], 
                 mlp1_b[i], mlp1_w[i], 
                 mlp2_b[i], mlp2_w[i], 
-                tx_block_out_act);
+                transformer_block_output);
 
-            /* Copy output to embd for next layer */
+            /* Copy output to embd for next block */
             for (int j = 0; j < N_SEQ*N_EMBD; j++) {
-                embd->buf[j] = tx_block_out_act->buf[j];
+                embd->buf[j] = transformer_block_output->buf[j];
             }
         }
 
         /* Final LayerNorm */
         layer_norm(embd, ln_f_g, ln_f_b);
 
-        /* Projection to vocab dimension */
-        transpose(wte, wte_T_act);
-        linear(embd, wte_T_act, zero_vocab_act, logits_out_act);
+        /* Projection to vocab. dimension */
+        transpose(wte, wte_transposed_tmp);
+        linear(embd, wte_transposed_tmp, zero_vocab_tmp, logit_output);
 
         /* Greedy sampling (only last timestep is considered) */
         int next_token_id = -1;
         float max_val = -INFINITY;
         for (int i = 0; i < N_VOCAB; i++) {
-            if (logits_out_act->buf[(N_SEQ-1)*N_VOCAB + i] > max_val) {
-                max_val = logits_out_act->buf[(N_SEQ-1)*N_VOCAB + i];
+            if (logit_output->buf[(N_SEQ-1)*N_VOCAB + i] > max_val) {
+                max_val = logit_output->buf[(N_SEQ-1)*N_VOCAB + i];
                 next_token_id = i;
             }
         }
 
         /* Print generated token */
-        printf(" >>> Next token ID: %d\n", next_token_id);
+        fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
 
         /* Update input for next iteration */
         input.push_back(next_token_id);
@@ -536,26 +535,26 @@ void finalize_model() {
 
     /* Freeing activations */
     delete embd;
-    delete ffn_proj_act;
-    delete mha_Wqkv_out_act;
-    delete mha_out_act;
-    delete mha_qkv_act;
-    delete mha_qkv_head_act;
-    delete mha_mask;
-    delete mha_out_head_act;
-    delete mha_q_act;
-    delete mha_k_act;
-    delete mha_v_act;
-    delete mha_attn_out_act;
-    delete mha_concat_head_act;
-    delete attn_score_act;
-    delete zero_seq_act;
-    delete k_T_act;
-    delete wte_T_act;
-    delete zero_dv_act;
-    delete zero_vocab_act;
-    delete residual_act;
-    delete logits_out_act;
-    delete tx_block_out_act;
+    delete ffn_proj_output;
+    delete mha_qkv_output;
+    delete mha_output;
+    delete mha_qkv_tmp;
+    delete mha_qkv_head_tmp;
+    delete mha_mask_tmp;
+    delete mha_merge_head_tmp;
+    delete mha_q_tmp;
+    delete mha_k_tmp;
+    delete mha_v_tmp;
+    delete mha_attn_output;
+    delete mha_concat_head_tmp;
+    delete attn_score_output;
+    delete zero_seq_tmp;
+    delete k_transposed_tmp;
+    delete wte_transposed_tmp;
+    delete zero_dv_tmp;
+    delete zero_vocab_tmp;
+    delete residual_tmp;
+    delete logit_output;
+    delete transformer_block_output;
 }
 

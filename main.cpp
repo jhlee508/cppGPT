@@ -1,8 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cassert>
 #include <cuda_runtime.h>
-#include <math.h>
+#include <cassert>
 #include <vector>
 
 #include "util.h"
@@ -12,6 +11,7 @@
 int main(int argc, char **argv) {
     // float *input
     // size_t input_size;
+    double st = 0.0, et = 0.0;
     parse_args(argc, argv);
 
     ////////////////////////////////////////////////////////////////////
@@ -49,7 +49,6 @@ int main(int argc, char **argv) {
     ////////////////////////////////////////////////////////////////////
     // MODEL COMPUTATION                                              //
     ////////////////////////////////////////////////////////////////////
-    double st = 0.0, et = 0.0;
     st = get_time();
 
     N_SEQ = example_input.size();
@@ -65,18 +64,18 @@ int main(int argc, char **argv) {
     fprintf(stdout, " Done!\n");
     fprintf(stdout, " Elapsed time: %lf (sec)\n", et - st);
     fprintf(stdout, " Throughput: %lf (tokens/sec)\n", T / (et - st));
+    
+    ////////////////////////////////////////////////////////////////////
+    // FINALIZATION                                                   //
+    ////////////////////////////////////////////////////////////////////    
+    fprintf(stderr, "[LOG] Finalizing... \n");
+    finalize_model();
 
     if (S) {
         fprintf(stdout, " Saving output... \n");
 
         // TODO: Save output
     }
-
-    ////////////////////////////////////////////////////////////////////
-    // FINALIZATION                                                   //
-    ////////////////////////////////////////////////////////////////////
-    fprintf(stderr, "[LOG] Finalizing... \n");
-    finalize_model();
 
     if (V) {
         fprintf(stdout, " Validation... \n");
