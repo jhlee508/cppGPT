@@ -5,4 +5,4 @@
     -a ./assets/output1N.bin \
     -o ./output.bin \
 	-v -s -w \
-    -t 10
+    -t 8

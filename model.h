@@ -3,7 +3,7 @@
 #include "tensor.h"
 
 
-/* Prompt length */
+/* Input Sequence Length */
 static int N_SEQ = 10;
 
 /* Constants */
@@ -27,6 +27,8 @@ static int N_SEQ = 10;
 #define OFFSET8     N_VOCAB*N_EMBD      // 50257*768
 
 
-void initialize_model(const char* param_fname);
-void finalize_model();
+void initialize_parameters(const char* param_fname);
+void initialize_activations();
 void generate_tokens(vector<int> input, int n_token);
+void finalize_parameters();
+void finalize_activations();

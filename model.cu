@@ -44,7 +44,7 @@ Tensor *transformer_block_output;
 
 
 /* [Model Initialization] */
-void initialize_model(const char* param_fname) {
+void initialize_parameters(const char* param_fname) {
     size_t param_size;
     fprintf(stderr, "[LOG] Loading param from %s\n", param_fname);
     float* param = (float*)read_binary(param_fname, &param_size);
@@ -77,8 +77,9 @@ void initialize_model(const char* param_fname) {
         fprintf(stderr, "[ERROR] Loading param failed: %zu != %zu\n", pos, param_size);
         exit(1);
     }
+}
 
-    /* Initializing activations */
+void initialize_activations() {
     // Embedding
     embd = new Tensor({N_SEQ, N_EMBD});
 
@@ -461,7 +462,7 @@ void transformer_block(Tensor* x,
 void generate_tokens(vector<int> input, int n_token) {
 
     /* Iteratively generate next token */
-    for (int t = 0; t < n_token; t++) {
+    for (int t = 1; t <= n_token; t++) {
 
         /* Token + Positional Embedding */
         token_pos_embedding(input, wte, wpe, embd);
@@ -500,18 +501,22 @@ void generate_tokens(vector<int> input, int n_token) {
             }
         }
 
-        /* Print generated token */
+        /* Print generated token ID */
         fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
 
-        /* Update input for next iteration */
+        /* Update input sequence */
         input.push_back(next_token_id);
-        input.erase(input.begin());
+        N_SEQ += 1;
+        
+        /* Re-initialize activations for next token generation */
+        finalize_activations();
+        initialize_activations();
     }   
 }
 
 
 /* [Model Finalization] */
-void finalize_model() {
+void finalize_parameters() {
 
     /* Freeing parameters */
     for (int i = 0; i < N_LAYER; i++) {
@@ -532,7 +537,9 @@ void finalize_model() {
     delete ln_f_g;
     delete wpe;
     delete wte;
+}
 
+void finalize_activations() {
     /* Freeing activations */
     delete embd;
     delete ffn_proj_output;
@@ -557,4 +564,3 @@ void finalize_model() {
     delete logit_output;
     delete transformer_block_output;
 }
-

@@ -38,7 +38,8 @@ int main(int argc, char **argv) {
     // };
     
     fprintf(stderr, "[LOG] Initializing... \n");
-    initialize_model(param_fname);
+    initialize_parameters(param_fname);
+    initialize_activations();
 
     if (W) {
         fprintf(stdout, " Warming up... \n");
@@ -69,7 +70,8 @@ int main(int argc, char **argv) {
     // FINALIZATION                                                   //
     ////////////////////////////////////////////////////////////////////    
     fprintf(stderr, "[LOG] Finalizing... \n");
-    finalize_model();
+    finalize_parameters();
+    finalize_activations();
 
     if (S) {
         fprintf(stdout, " Saving output... \n");
