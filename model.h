@@ -29,6 +29,6 @@ static int N_SEQ = 10;
 
 void initialize_parameters(const char* param_fname);
 void initialize_activations();
-void generate_tokens(vector<int> input, int n_token);
+void generate_tokens(int* input, int n_token);
 void finalize_parameters();
 void finalize_activations();

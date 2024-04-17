@@ -9,9 +9,9 @@ using namespace std;
 int T = 1;
 bool V, S, W;
 
+char input_fname[] = "./data/input.bin";
 char param_fname[] = "./assets/model_file.bin";
-char input_fname[] = "./assets/input1N.bin";
-char answer_fname[] = "./assets/answer.bin";
+char answer_fname[] = "./data/answer.bin";
 char output_fname[] = "./output.bin";
 
 void parse_args(int argc, char **argv) {
@@ -69,10 +69,10 @@ void print_help() {
     fprintf(stdout,
         " Usage: ./main [-i 'pth'] [-p 'pth'] [-o 'pth'] [-a 'pth'] [-t 'tokens'] [-v] [-s] [-w] [-h]\n");
     fprintf(stdout, " Options:\n");
-    fprintf(stdout, "  -i: Input binary path (default: assets/input1N.bin)\n");
+    fprintf(stdout, "  -i: Input binary path (default: data/input.bin)\n");
     fprintf(stdout, "  -p: Model parameter path (default: assets/model_file.bin)\n");
     fprintf(stdout, "  -o: Output binary path (default: output.bin)\n");
-    fprintf(stdout, "  -a: Answer binary path (default: assets/answer.bin)\n");
+    fprintf(stdout, "  -a: Answer binary path (default: data/answer.bin)\n");
     fprintf(stdout, "  -t: Number of tokens to generate (default: 1)\n");
     fprintf(stdout, "  -v: Enable validation (default: OFF)\n");
     fprintf(stdout, "  -s: Enable saving output tensor (default: OFF)\n");
@@ -101,7 +101,7 @@ void* read_binary(const char *fname, size_t *size) {
     fclose(f);
 
     if (size != NULL)
-        *size = (size_t)(size_ / 4); // float
+        *size = (size_t)(size_ / 4); // 4 bytes per float or int
 
     return buf;
 }

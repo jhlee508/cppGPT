@@ -6,7 +6,7 @@
 
 
 /* [Parameters] */
-/* 12 Transformer Blocks in Model */
+/* 12 Transformer Blocks */
 Tensor *attn_b[N_LAYER], *attn_w[N_LAYER];
 Tensor *proj_b[N_LAYER], *proj_w[N_LAYER];
 Tensor *ln_1_b[N_LAYER], *ln_1_g[N_LAYER];
@@ -23,7 +23,7 @@ Tensor *embd;
 Tensor *ffn_proj_output;
 Tensor *mha_qkv_output;
 Tensor *mha_output;
-Tensor *mha_qkv_tmp;
+Tensor *mha_qkv_split_tmp;
 Tensor *mha_qkv_head_tmp;
 Tensor *mha_mask_tmp;
 Tensor *mha_merge_head_tmp;
@@ -89,7 +89,7 @@ void initialize_activations() {
     // MHA
     mha_qkv_output = new Tensor({N_SEQ, 3*N_EMBD});
     mha_output = new Tensor({N_SEQ, N_EMBD});
-    mha_qkv_tmp = new Tensor({3, N_SEQ, N_EMBD});
+    mha_qkv_split_tmp = new Tensor({3, N_SEQ, N_EMBD});
     mha_qkv_head_tmp = new Tensor({3, N_HEAD, N_SEQ, N_EMBD/N_HEAD});
     mha_mask_tmp = new Tensor({N_SEQ, N_SEQ});
     mha_merge_head_tmp = new Tensor({N_HEAD, N_SEQ, N_EMBD/N_HEAD});
@@ -129,7 +129,8 @@ void token_pos_embedding(vector<int> x,
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < N_EMBD; j++) {
             x_out->buf[i*N_EMBD + j] = 
-            wte->buf[x[i]*N_EMBD + j] + wpe->buf[i*N_EMBD + j];
+                wte->buf[x[i]*N_EMBD + j] + 
+                wpe->buf[i*N_EMBD + j];
         }
     }
 }
@@ -245,6 +246,78 @@ void transpose(Tensor* x,
     }
 }
 
+/* (Elem-wise) Scale
+ * @param [x] input: [N_SEQ, N_SEQ]
+ * @param [scale] input: [1]
+ */
+void scaling(Tensor* x, float scale) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_SEQ; j++) {
+            x->buf[i*N_SEQ + j] *= scale;
+        }
+    }
+}
+
+/* (Elem-wise) Masking
+ * @param [x] input: [N_SEQ, N_SEQ]
+ * @param [mask] input: [N_SEQ, N_SEQ]
+ * @param [x] output: [N_SEQ, N_SEQ]
+ */
+void masking(Tensor* x, Tensor* mask) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_SEQ; j++) {
+            x->buf[i*N_SEQ + j] += mask->buf[i*N_SEQ + j];
+        }
+    }
+}
+
+/* (Elem-wise) Copy
+ * @param [x] input: [N_SEQ, N_EMBD]
+ * @param [x_out] output: [N_SEQ, N_EMBD] 
+ */
+void copy(Tensor* x, Tensor* x_out) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_EMBD; j++) {
+            x_out->buf[i*N_EMBD + j] = x->buf[i*N_EMBD + j];
+        }
+    }
+}
+
+/* (Elem-wise) Addition
+ * @param [x] input: [N_SEQ, N_EMBD]
+ * @param [add] input: [N_SEQ, N_EMBD]
+ * @param [x] output: [N_SEQ, N_EMBD]
+ */
+void addition(Tensor* x, Tensor* add) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_EMBD; j++) {
+            x->buf[i*N_EMBD + j] += add->buf[i*N_EMBD + j];
+        }
+    }
+}
+
+/* Greedy Sampling
+ * @param [x] input: [N_VOCAB]
+ * @return [max_idx] output: [1]
+ */
+int greedy_sampling(Tensor* x) {
+
+    int max_idx = 0;
+    float max_val = -INFINITY;
+    for (int i = 0; i < N_VOCAB; i++) {
+        if (x->buf[(N_SEQ-1)*N_VOCAB + i] > max_val) {
+            max_val = x->buf[(N_SEQ-1)*N_VOCAB + i];
+            max_idx = i;
+        }
+    }
+    
+    return max_idx;
+}
+
 /* (Position-wise) Feed-Forward Network
  * @param [x] input: [N_SEQ, N_EMBD]
  * @param [mlp1_w] input: [N_EMBD, 4*N_EMBD]
@@ -288,19 +361,22 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
     linear(q, k_transposed_tmp, zero_seq_tmp, attn_score_output);
 
     /* Elem-wise scaling */    
-    for (int i = 0; i < N_Q; i++) {
-        for (int j = 0; j < N_K; j++) {
-            attn_score_output->buf[i*N_K + j] /= sqrt(D_K);
-        }
-    }
+    // for (int i = 0; i < N_Q; i++) {
+    //     for (int j = 0; j < N_K; j++) {
+    //         attn_score_output->buf[i*N_K + j] /= sqrt(D_K);
+    //     }
+    // }
+    scaling(attn_score_output, 1.0 / sqrt(D_K));
+    
 
     /* Apply mask */
-    for (int i = 0; i < N_Q; i++) {
-        for (int j = 0; j < N_K; j++) {
-            attn_score_output->buf[i*N_K + j] += 
-                mask->buf[i*N_K + j];
-        }
-    }
+    // for (int i = 0; i < N_Q; i++) {
+    //     for (int j = 0; j < N_K; j++) {
+    //         attn_score_output->buf[i*N_K + j] += 
+    //             mask->buf[i*N_K + j];
+    //     }
+    // }
+    masking(attn_score_output, mask);
 
     /* softmax */
     softmax(attn_score_output);
@@ -329,7 +405,7 @@ void mha(Tensor* x,
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < N_SEQ; j++) {
             for (int k = 0; k < N_EMBD; k++) {
-                mha_qkv_tmp->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
+                mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
                     mha_qkv_output->buf[j*3*N_EMBD + i*N_EMBD + k];
             }
         }
@@ -341,7 +417,7 @@ void mha(Tensor* x,
             for (int k = 0; k < N_SEQ; k++) {
                 for (int l = 0; l < N_EMBD/N_HEAD; l++) {
                     mha_qkv_head_tmp->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
-                        mha_qkv_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
+                        mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
                 }
             }
         }
@@ -425,9 +501,10 @@ void transformer_block(Tensor* x,
     Tensor* x_out) {
 
     /* Copy Residual */
-    for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        residual_tmp->buf[i] = x->buf[i];
-    }
+    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
+    //     residual_tmp->buf[i] = x->buf[i];
+    // }
+    copy(x, residual_tmp);
 
     /* Layer Normalization */
     layer_norm(x, ln_1_g, ln_1_b);
@@ -436,14 +513,16 @@ void transformer_block(Tensor* x,
     mha(x, attn_b, attn_w, proj_b, proj_w, mha_output);
 
     /* Add Residual */
-    for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        mha_output->buf[i] += residual_tmp->buf[i];
-    }   
+    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
+    //     mha_output->buf[i] += residual_tmp->buf[i];
+    // }   
+    addition(mha_output, residual_tmp);
 
     /* Copy Residual */
-    for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        residual_tmp->buf[i] = mha_output->buf[i];
-    }
+    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
+    //     residual_tmp->buf[i] = mha_output->buf[i];
+    // }
+    copy(mha_output, residual_tmp);
 
     /* Layer Normalization */
     layer_norm(mha_output, ln_2_g, ln_2_b);
@@ -452,66 +531,67 @@ void transformer_block(Tensor* x,
     ffn(mha_output, mlp1_w, mlp1_b, mlp2_w, mlp2_b, x_out);
 
     /* Add Residual */
-    for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-        x_out->buf[i] += residual_tmp->buf[i];
-    }
+    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
+    //     x_out->buf[i] += residual_tmp->buf[i];
+    // }
+    addition(x_out, residual_tmp);
 }
 
 
 /* [Token Generation] */
-void generate_tokens(vector<int> input, int n_token) {
-
-    /* Iteratively generate next token */
-    for (int t = 1; t <= n_token; t++) {
-
-        /* Token + Positional Embedding */
-        token_pos_embedding(input, wte, wpe, embd);
-
-        /* Forward path through Transformer blocks */
-        for (int i = 0; i < N_LAYER; i++) {
-            transformer_block(embd, 
-                attn_b[i], attn_w[i], 
-                proj_b[i], proj_w[i], 
-                ln_1_b[i], ln_1_g[i], 
-                ln_2_b[i], ln_2_g[i], 
-                mlp1_b[i], mlp1_w[i], 
-                mlp2_b[i], mlp2_w[i], 
-                transformer_block_output);
-
-            /* Copy output to embd for next block */
-            for (int j = 0; j < N_SEQ*N_EMBD; j++) {
-                embd->buf[j] = transformer_block_output->buf[j];
-            }
-        }
-
-        /* Final LayerNorm */
-        layer_norm(embd, ln_f_g, ln_f_b);
-
-        /* Projection to vocab. dimension */
-        transpose(wte, wte_transposed_tmp);
-        linear(embd, wte_transposed_tmp, zero_vocab_tmp, logit_output);
-
-        /* Greedy sampling (only last timestep is considered) */
-        int next_token_id = -1;
-        float max_val = -INFINITY;
-        for (int i = 0; i < N_VOCAB; i++) {
-            if (logit_output->buf[(N_SEQ-1)*N_VOCAB + i] > max_val) {
-                max_val = logit_output->buf[(N_SEQ-1)*N_VOCAB + i];
-                next_token_id = i;
-            }
-        }
-
-        /* Print generated token ID */
-        fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
-
-        /* Update input sequence */
-        input.push_back(next_token_id);
-        N_SEQ += 1;
+void generate_tokens(int* input, int n_token) {
+    
+    int n_prompt = 1;
+    /* Outer loop: select a single prompt */
+    for (int p = 0; p < n_prompt * N_SEQ; p+=N_SEQ) {
         
-        /* Re-initialize activations for next token generation */
-        finalize_activations();
-        initialize_activations();
-    }   
+        /* Initialize input prompt */
+        vector<int> input_prompt(N_SEQ);
+        memcpy(input_prompt.data(), input + p, N_SEQ * sizeof(int));
+
+        /* Inner loop: generate next token */
+        for (int t = 1; t <= n_token; t++) {
+
+            /* Token + Positional Embedding */
+            token_pos_embedding(input_prompt, wte, wpe, embd);
+
+            /* Forward path of Transformer blocks */
+            for (int i = 0; i < N_LAYER; i++) {
+                transformer_block(embd, 
+                    attn_b[i], attn_w[i], 
+                    proj_b[i], proj_w[i], 
+                    ln_1_b[i], ln_1_g[i], 
+                    ln_2_b[i], ln_2_g[i], 
+                    mlp1_b[i], mlp1_w[i], 
+                    mlp2_b[i], mlp2_w[i], 
+                    transformer_block_output);
+
+                /* Copy output to embd for next block */
+                copy(transformer_block_output, embd);
+            }
+
+            /* Final Layer Normalization */
+            layer_norm(embd, ln_f_g, ln_f_b);
+
+            /* Projection to vocab. dimension */
+            transpose(wte, wte_transposed_tmp);
+            linear(embd, wte_transposed_tmp, zero_vocab_tmp, logit_output);
+
+            /* Greedy sampling (only last timestep is considered) */
+            int next_token_id = greedy_sampling(logit_output);
+
+            /* Print generated token ID */
+            fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
+
+            /* Update input sequence and N_SEQ length */
+            N_SEQ += 1;
+            input_prompt.push_back(next_token_id);
+            
+            /* Re-initialize activations for next token generation */
+            finalize_activations();
+            initialize_activations();
+        }  
+    }
 }
 
 
@@ -540,12 +620,13 @@ void finalize_parameters() {
 }
 
 void finalize_activations() {
+
     /* Freeing activations */
     delete embd;
     delete ffn_proj_output;
     delete mha_qkv_output;
     delete mha_output;
-    delete mha_qkv_tmp;
+    delete mha_qkv_split_tmp;
     delete mha_qkv_head_tmp;
     delete mha_mask_tmp;
     delete mha_merge_head_tmp;

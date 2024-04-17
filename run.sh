@@ -1,8 +1,8 @@
 #!bin/sh
 
 ./main \
-    -i ./assets/input1N.bin \
-    -a ./assets/output1N.bin \
+    -i ./data/input.bin \
+    -a ./data/answer.bin \
     -o ./output.bin \
 	-v -s -w \
-    -t 8
+    -t 5
