@@ -9,7 +9,7 @@
 
 
 int main(int argc, char **argv) {
-    int *input;
+    int *input, *output;
     size_t input_size;
     double st = 0.0, et = 0.0;
     parse_args(argc, argv);
@@ -17,30 +17,24 @@ int main(int argc, char **argv) {
     ////////////////////////////////////////////////////////////////////
     // INITIALIZATION                                                 //
     ////////////////////////////////////////////////////////////////////
-    fprintf(stderr, "[LOG] Reading input... \n");
-
-    // TODO: Read input
+    /* Initialize input and output */
     fprintf(stderr, "[LOG] Reading input from %s\n", input_fname);
     input = (int *)read_binary(input_fname, &input_size);
-    fprintf(stderr, "[LOG] Input size: %ld\n", input_size);
-
-    int example_input[] = {
-        // Alan Turing theorized that computers would one day become
-        36235, 39141, 18765, 1143, 326, 9061, 561, 530, 1110, 1716 
-    }; 
-    // int example_answer[] = {
-    //     // the
-    //     262 
-    // };
+    output = (int *)malloc(N * T * sizeof(int));
     
+    /* Initialize parameters and activations */
     fprintf(stderr, "[LOG] Initializing... \n");
     initialize_parameters(param_fname);
     initialize_activations();
 
+    /* Cannot surpass the max_seq_len of the model */
+    assert(N_SEQ + T <= N_CTX);
+
+    /* Warm-up */
     if (W) {
         fprintf(stdout, " Warming up... \n");
-
-        // TODO: Warm-up
+        for (int i = 0; i < 3; i++)
+            generate_tokens(input, output, 1, 1);
     }
 
     ////////////////////////////////////////////////////////////////////
@@ -48,31 +42,32 @@ int main(int argc, char **argv) {
     ////////////////////////////////////////////////////////////////////
     st = get_time();
 
-    /* Cannot surpass the max_seq_len of the model */
-    assert(N_SEQ + T <= N_CTX);
-
     /* Text Generation */
     fprintf(stdout, " Generating tokens... \n");
-    generate_tokens(input, T);
+    generate_tokens(input, output, N, T);
 
     et = get_time();
+
+    /* Print the result */
     fprintf(stdout, " Done!\n");
     fprintf(stdout, " Elapsed time: %lf (sec)\n", et - st);
-    fprintf(stdout, " Throughput: %lf (tokens/sec)\n", T / (et - st));
+    fprintf(stdout, " Throughput: %lf (tokens/sec)\n", N*T / (et - st));
     
     ////////////////////////////////////////////////////////////////////
     // FINALIZATION                                                   //
     ////////////////////////////////////////////////////////////////////    
+    /* Finalize parameters and activations */
     fprintf(stderr, "[LOG] Finalizing... \n");
     finalize_parameters();
     finalize_activations();
 
+    /* Save output */
     if (S) {
         fprintf(stdout, " Saving output... \n");
-
-        // TODO: Save output
+        write_binary(output, output_fname, N*T);
     }
 
+    /* Validation */
     if (V) {
         fprintf(stdout, " Validation... \n");
 

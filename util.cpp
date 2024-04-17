@@ -6,17 +6,18 @@
 
 using namespace std;
 
-int T = 1;
+int N = 1;
+int T = 5;
 bool V, S, W;
 
 char input_fname[] = "./data/input.bin";
 char param_fname[] = "./assets/model_file.bin";
 char answer_fname[] = "./data/answer.bin";
-char output_fname[] = "./output.bin";
+char output_fname[] = "./data/output.bin";
 
 void parse_args(int argc, char **argv) {
     int args;
-    while ((args = getopt(argc, argv, "i:o:a:p:t:vswh")) != -1) {
+    while ((args = getopt(argc, argv, "i:o:a:p:n:t:vswh")) != -1) {
         switch (args) {
         case 'i':
             strcpy(input_fname, optarg);
@@ -29,6 +30,9 @@ void parse_args(int argc, char **argv) {
             break;
         case 'p':
             strcpy(param_fname, optarg);
+            break;
+        case 'n':
+            N = atoi(optarg);
             break;
         case 't':
             T = atoi(optarg);
@@ -61,19 +65,21 @@ void parse_args(int argc, char **argv) {
     fprintf(stdout, " Warmup: %s\n", W ? "ON" : "OFF");
     fprintf(stdout, " Validation: %s\n", V ? "ON" : "OFF");
     fprintf(stdout, " Save output: %s\n", S ? "ON" : "OFF");
-    fprintf(stdout, " Number of Tokens: %d\n", T);
+    fprintf(stdout, " Number of Prompts: %d\n", N);
+    fprintf(stdout, " Number of Tokens to generate: %d\n", T);
     fprintf(stdout, "=============================================\n\n");
 }
 
 void print_help() {
     fprintf(stdout,
-        " Usage: ./main [-i 'pth'] [-p 'pth'] [-o 'pth'] [-a 'pth'] [-t 'tokens'] [-v] [-s] [-w] [-h]\n");
+        " Usage: ./main [-i 'pth'] [-p 'pth'] [-o 'pth'] [-a 'pth'] [-t 'tokens'] [-n 'prompts'] [-v] [-s] [-w] [-h]\n");
     fprintf(stdout, " Options:\n");
     fprintf(stdout, "  -i: Input binary path (default: data/input.bin)\n");
     fprintf(stdout, "  -p: Model parameter path (default: assets/model_file.bin)\n");
     fprintf(stdout, "  -o: Output binary path (default: output.bin)\n");
     fprintf(stdout, "  -a: Answer binary path (default: data/answer.bin)\n");
-    fprintf(stdout, "  -t: Number of tokens to generate (default: 1)\n");
+    fprintf(stdout, "  -n: Number of prompts (default: 1)\n");
+    fprintf(stdout, "  -t: Number of tokens to generate (default: 5)\n");
     fprintf(stdout, "  -v: Enable validation (default: OFF)\n");
     fprintf(stdout, "  -s: Enable saving output tensor (default: OFF)\n");
     fprintf(stdout, "  -w: Enable warmup (default: OFF)\n");
@@ -81,7 +87,6 @@ void print_help() {
 }
 
 void* read_binary(const char *fname, size_t *size) {
-    fprintf(stderr, "[LOG] Reading binary... \n");
     FILE *f = fopen(fname, "rb");
     if (f == NULL) {
         fprintf(stderr, "[ERROR] Cannot open file \'%s\'\n", fname);
@@ -104,6 +109,12 @@ void* read_binary(const char *fname, size_t *size) {
         *size = (size_t)(size_ / 4); // 4 bytes per float or int
 
     return buf;
+}
+
+void write_binary(int *output, const char *filename, int size_) {
+    FILE *f = (FILE *)fopen(filename, "w");
+    fwrite(output, sizeof(int), size_, f);
+    fclose(f);
 }
 
 double get_time() {

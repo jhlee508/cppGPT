@@ -48,7 +48,6 @@ void initialize_parameters(const char* param_fname) {
     size_t param_size;
     fprintf(stderr, "[LOG] Loading param from %s\n", param_fname);
     float* param = (float*)read_binary(param_fname, &param_size);
-    fprintf(stderr, "[LOG] Total param size: %zu\n", param_size);
 
     /* Loading parameters */
     size_t pos = 0;
@@ -352,8 +351,6 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
                Tensor* mask, 
                Tensor* out) {
 
-    int N_Q = q->shape[0]; 
-    int N_K = k->shape[0]; 
     int D_K = k->shape[1];
 
     /* q @ k.T */
@@ -361,21 +358,10 @@ void attention(Tensor* q, Tensor* k, Tensor* v,
     linear(q, k_transposed_tmp, zero_seq_tmp, attn_score_output);
 
     /* Elem-wise scaling */    
-    // for (int i = 0; i < N_Q; i++) {
-    //     for (int j = 0; j < N_K; j++) {
-    //         attn_score_output->buf[i*N_K + j] /= sqrt(D_K);
-    //     }
-    // }
     scaling(attn_score_output, 1.0 / sqrt(D_K));
     
 
     /* Apply mask */
-    // for (int i = 0; i < N_Q; i++) {
-    //     for (int j = 0; j < N_K; j++) {
-    //         attn_score_output->buf[i*N_K + j] += 
-    //             mask->buf[i*N_K + j];
-    //     }
-    // }
     masking(attn_score_output, mask);
 
     /* softmax */
@@ -416,8 +402,9 @@ void mha(Tensor* x,
         for (int j = 0; j < N_HEAD; j++) {
             for (int k = 0; k < N_SEQ; k++) {
                 for (int l = 0; l < N_EMBD/N_HEAD; l++) {
-                    mha_qkv_head_tmp->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
-                        mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
+                    mha_qkv_head_tmp->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
+                        j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
+                            mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
                 }
             }
         }
@@ -501,9 +488,6 @@ void transformer_block(Tensor* x,
     Tensor* x_out) {
 
     /* Copy Residual */
-    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-    //     residual_tmp->buf[i] = x->buf[i];
-    // }
     copy(x, residual_tmp);
 
     /* Layer Normalization */
@@ -513,15 +497,9 @@ void transformer_block(Tensor* x,
     mha(x, attn_b, attn_w, proj_b, proj_w, mha_output);
 
     /* Add Residual */
-    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-    //     mha_output->buf[i] += residual_tmp->buf[i];
-    // }   
     addition(mha_output, residual_tmp);
 
     /* Copy Residual */
-    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-    //     residual_tmp->buf[i] = mha_output->buf[i];
-    // }
     copy(mha_output, residual_tmp);
 
     /* Layer Normalization */
@@ -531,39 +509,45 @@ void transformer_block(Tensor* x,
     ffn(mha_output, mlp1_w, mlp1_b, mlp2_w, mlp2_b, x_out);
 
     /* Add Residual */
-    // for (int i = 0; i < N_SEQ*N_EMBD; i++) {
-    //     x_out->buf[i] += residual_tmp->buf[i];
-    // }
     addition(x_out, residual_tmp);
 }
 
 
 /* [Token Generation] */
-void generate_tokens(int* input, int n_token) {
+void generate_tokens(int* input, int* output, int n_prompt, int n_token) {
     
-    int n_prompt = 1;
-    /* Outer loop: select a single prompt */
-    for (int p = 0; p < n_prompt * N_SEQ; p+=N_SEQ) {
+    /* Set original single prompt size */
+    int prompt_size = N_SEQ;
+
+    /* Outer loop: generate tokens for each prompt */
+    for (int p = 0; p < n_prompt; p++) {
         
-        /* Initialize input prompt */
-        vector<int> input_prompt(N_SEQ);
-        memcpy(input_prompt.data(), input + p, N_SEQ * sizeof(int));
+        /* Initialize single input prompt */
+        vector<int> input_prompt(prompt_size);
+        memcpy(input_prompt.data(), input + p*prompt_size, prompt_size*sizeof(int));
+
+        // print input prompt
+        fprintf(stdout, " [DEBUG] Input prompt: ");
+        for (int i = 0; i < prompt_size; i++) {
+            fprintf(stdout, "%d ", input_prompt[i]);
+        }
+        fprintf(stdout, "\n");
 
         /* Inner loop: generate next token */
-        for (int t = 1; t <= n_token; t++) {
+        for (int t = 0; t < n_token; t++) {
 
             /* Token + Positional Embedding */
             token_pos_embedding(input_prompt, wte, wpe, embd);
 
             /* Forward path of Transformer blocks */
-            for (int i = 0; i < N_LAYER; i++) {
+            for (int l = 0; l < N_LAYER; l++) {
                 transformer_block(embd, 
-                    attn_b[i], attn_w[i], 
-                    proj_b[i], proj_w[i], 
-                    ln_1_b[i], ln_1_g[i], 
-                    ln_2_b[i], ln_2_g[i], 
-                    mlp1_b[i], mlp1_w[i], 
-                    mlp2_b[i], mlp2_w[i], 
+                    attn_b[l], attn_w[l], 
+                    proj_b[l], proj_w[l], 
+                    ln_1_b[l], ln_1_g[l], 
+                    ln_2_b[l], ln_2_g[l], 
+                    mlp1_b[l], mlp1_w[l], 
+                    mlp2_b[l], mlp2_w[l], 
                     transformer_block_output);
 
                 /* Copy output to embd for next block */
@@ -583,14 +567,24 @@ void generate_tokens(int* input, int n_token) {
             /* Print generated token ID */
             fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
 
-            /* Update input sequence and N_SEQ length */
-            N_SEQ += 1;
+            /* Increment input prompt and N_SEQ length */
             input_prompt.push_back(next_token_id);
+            N_SEQ += 1;
+
+            /* Store generated token to output */
+            output[p*n_token + t] = next_token_id;
             
             /* Re-initialize activations for next token generation */
             finalize_activations();
             initialize_activations();
-        }  
+        } 
+
+        /* Reset N_SEQ to original size */
+        N_SEQ = prompt_size;
+
+        /* Re-initialize activations for next prompt */
+        finalize_activations();
+        initialize_activations();
     }
 }
 

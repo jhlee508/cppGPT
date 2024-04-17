@@ -1,7 +1,15 @@
 # model files
-assets/*
+assets/
+data/
+
+# build
+build/
+
+# exe
+tools/print_output
 
 # outputs
 main
 *.o
 *.out
+*.spec
