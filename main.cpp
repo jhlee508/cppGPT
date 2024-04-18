@@ -1,109 +1,124 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cassert>
 #include <cuda_runtime.h>
-#include <math.h>
+#include <cassert>
 #include <vector>
+#include <mpi.h>
 
 #include "util.h"
 #include "model.h"
 
 
 int main(int argc, char **argv) {
-    // float *input
-    // size_t input_size;
-    parse_args(argc, argv);
+
+    /* MPI Initialization */
+    int mpi_rank, mpi_size;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+    
+    /* Parse arguments */
+    if (mpi_rank == 0) {
+        parse_args(argc, argv);
+    }
 
     ////////////////////////////////////////////////////////////////////
     // INITIALIZATION                                                 //
     ////////////////////////////////////////////////////////////////////
-    fprintf(stderr, "[LOG] Reading input... \n");
-
-    // TODO: Read input
-    // float* input = (float *)read_binary(input_fname, &input_size);
-
-    // vector type example_input
-    vector<int> example_input = {
-        // Alan Turing theorized that computers would one day become
-        36235, 39141, 18765, 1143, 326, 9061, 561, 530, 1110, 1716 
-    };
-
-    // int example_input[] = {
-    //     // Alan Turing theorized that computers would one day become
-    //     36235, 39141, 18765, 1143, 326, 9061, 561, 530, 1110, 1716 
-    // }; 
-    // float example_answer[] = {
-    //     // the
-    //     262 
-    // };
     
-    fprintf(stderr, "[LOG] Initializing... \n");
-    initialize_model(param_fname);
+    int *input, *output;
 
+    if (mpi_rank == 0) {
+        /* Load input (size: N x N_SEQ) from file  */
+        fprintf(stderr, "[LOG] Reading input from %s\n", input_fname);
+        size_t input_size;
+        input = (int *)read_binary(input_fname, &input_size);
+        
+        if (input_size % N_SEQ != 0) {
+            fprintf(stderr, "[ERROR] Invalid input size\n");
+            exit(1);
+        }
+    }
+
+    /* Allocate output (size: N x T) */
+    output = (int *)malloc(N * T * sizeof(int));
+    
+    /* Initialize parameters and activations */
+    fprintf(stderr, "[LOG] Initializing... \n");
+    initialize_parameters(param_fname);
+    initialize_activations();
+
+    /* Cannot surpass the max_seq_len of the model */
+    assert(N_SEQ + T <= N_CTX);
+
+    /* Warm-up */
     if (W) {
         fprintf(stdout, " Warming up... \n");
-
-        // TODO: Warm-up
+        for (int i = 0; i < 3; i++)
+            generate_tokens(input, output, 1, 1);
     }
 
     ////////////////////////////////////////////////////////////////////
     // MODEL COMPUTATION                                              //
     ////////////////////////////////////////////////////////////////////
+    
     double st = 0.0, et = 0.0;
-    st = get_time();
 
-    N_SEQ = example_input.size();
-
-    /* Cannot surpass the max_seq_len of the model */
-    assert(N_SEQ + T <= N_CTX);
+    if (mpi_rank == 0) {
+        fprintf(stdout, " Start computation... \n");
+        st = get_time();
+    }
 
     /* Text Generation */
-    for (int i = 0; i < T; i++) {
-        Tensor* logits = new Tensor({N_SEQ, N_VOCAB});
-        
-        /* This function is implemented in 'model.cu' file */
-        logits = generate_tokens(example_input);
-        
-        /* Greedy sampling (the last timestep only) */
-        int next_token_id = 0;
-        float max_val = -INFINITY;
-        for (int j = 0; j < N_VOCAB; j++) {
-            if (logits->buf[(N_SEQ-1)*N_VOCAB + j] > max_val) {
-                max_val = logits->buf[(N_SEQ-1)*N_VOCAB + j];
-                next_token_id = j;
-            }
-        }
-        fprintf(stdout, ">>> Next token ID: %d\n", next_token_id);
+    MPI_Barrier(MPI_COMM_WORLD);
+    generate_tokens(input, output, N, T);
+    MPI_Barrier(MPI_COMM_WORLD);
 
-        /* Append next_token id to input */
-        example_input.push_back(next_token_id);
+    if (mpi_rank == 0) {
+        et = get_time();
 
-        /* Remove the first token */
-        example_input.erase(example_input.begin());
+        /* Print the result */
+        fprintf(stdout, " Done!\n");
+        fprintf(stdout, " Elapsed time: %lf (sec)\n", et - st);
+        fprintf(stdout, " Throughput: %lf (tokens/sec)\n", 
+            N*T / (et - st));
     } 
-
-    et = get_time();
-    fprintf(stdout, " Done!\n");
-    fprintf(stdout, " Elapsed time: %lf (sec)\n", et - st);
-    fprintf(stdout, " Throughput: %lf (tokens/sec)\n", T / (et - st));
-
-    if (S) {
-        fprintf(stdout, " Saving output... \n");
-
-        // TODO: Save output
-    }
-
+    
     ////////////////////////////////////////////////////////////////////
     // FINALIZATION                                                   //
-    ////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////    
+    
+    /* Finalize parameters and activations */
     fprintf(stderr, "[LOG] Finalizing... \n");
-    finalize_model();
+    finalize_parameters();
+    finalize_activations();
+    
+    if (mpi_rank == 0) {
+        /* Save output */
+        if (S) {
+            fprintf(stdout, " Saving output... \n");
+            write_binary(output, output_fname, N*T);
+        }
 
-    if (V) {
-        fprintf(stdout, " Validation... \n");
+        /* Validation */
+        if (V) {
+            fprintf(stdout, " Validation... \n");
 
-        // TODO: Validation
+            int *answer = (int *)read_binary(answer_fname, NULL);
+            int diff = check_validation(output, answer, N*T);
+            if (diff == -1) {
+                fprintf(stdout, " Validation passed!\n");
+            } else {
+                fprintf(stdout, " Validation failed: First mismatch "
+                    "at prompt[#%d], token_ID[#%d] (output[%d]=%d vs. "
+                    "answer[%d]=%d)\n", diff / T, diff % T, diff, 
+                    output[diff], diff, answer[diff]);
+            }
+        }
     }
+
+    /* MPI Finalization */
+    MPI_Finalize();
 
     return 0;
 }
