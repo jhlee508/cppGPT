@@ -19,4 +19,5 @@ void print_help();
 void *read_binary(const char *fname, size_t *size);
 void write_binary(int *output, const char *filename, int size_);
 double get_time();
+int check_validation(int *output, int *answer, int size_);
 

@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cmath>
+#include <mpi.h>
 
 #include "model.h"
 #include "util.h"
@@ -515,76 +516,80 @@ void transformer_block(Tensor* x,
 
 /* [Token Generation] */
 void generate_tokens(int* input, int* output, int n_prompt, int n_token) {
+    int mpi_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    if (mpi_rank == 0) {
     
-    /* Set original single prompt size */
-    int prompt_size = N_SEQ;
+        /* Set original single prompt size */
+        int prompt_size = N_SEQ;
 
-    /* Outer loop: generate tokens for each prompt */
-    for (int p = 0; p < n_prompt; p++) {
-        
-        /* Initialize single input prompt */
-        vector<int> input_prompt(prompt_size);
-        memcpy(input_prompt.data(), input + p*prompt_size, prompt_size*sizeof(int));
-
-        // print input prompt
-        fprintf(stdout, " [DEBUG] Input prompt: ");
-        for (int i = 0; i < prompt_size; i++) {
-            fprintf(stdout, "%d ", input_prompt[i]);
-        }
-        fprintf(stdout, "\n");
-
-        /* Inner loop: generate next token */
-        for (int t = 0; t < n_token; t++) {
-
-            /* Token + Positional Embedding */
-            token_pos_embedding(input_prompt, wte, wpe, embd);
-
-            /* Forward path of Transformer blocks */
-            for (int l = 0; l < N_LAYER; l++) {
-                transformer_block(embd, 
-                    attn_b[l], attn_w[l], 
-                    proj_b[l], proj_w[l], 
-                    ln_1_b[l], ln_1_g[l], 
-                    ln_2_b[l], ln_2_g[l], 
-                    mlp1_b[l], mlp1_w[l], 
-                    mlp2_b[l], mlp2_w[l], 
-                    transformer_block_output);
-
-                /* Copy output to embd for next block */
-                copy(transformer_block_output, embd);
-            }
-
-            /* Final Layer Normalization */
-            layer_norm(embd, ln_f_g, ln_f_b);
-
-            /* Projection to vocab. dimension */
-            transpose(wte, wte_transposed_tmp);
-            linear(embd, wte_transposed_tmp, zero_vocab_tmp, logit_output);
-
-            /* Greedy sampling (only last timestep is considered) */
-            int next_token_id = greedy_sampling(logit_output);
-
-            /* Print generated token ID */
-            fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
-
-            /* Increment input prompt and N_SEQ length */
-            input_prompt.push_back(next_token_id);
-            N_SEQ += 1;
-
-            /* Store generated token to output */
-            output[p*n_token + t] = next_token_id;
+        /* Outer loop: generate tokens for each prompt */
+        for (int p = 0; p < n_prompt; p++) {
             
-            /* Re-initialize activations for next token generation */
+            /* Initialize single input prompt */
+            vector<int> input_prompt(prompt_size);
+            memcpy(input_prompt.data(), input + p*prompt_size, prompt_size*sizeof(int));
+
+            // print input prompt
+            fprintf(stdout, " [DEBUG] Input prompt: ");
+            for (int i = 0; i < prompt_size; i++) {
+                fprintf(stdout, "%d ", input_prompt[i]);
+            }
+            fprintf(stdout, "\n");
+
+            /* Inner loop: generate next token */
+            for (int t = 0; t < n_token; t++) {
+
+                /* Token + Positional Embedding */
+                token_pos_embedding(input_prompt, wte, wpe, embd);
+
+                /* Forward path of Transformer blocks */
+                for (int l = 0; l < N_LAYER; l++) {
+                    transformer_block(embd, 
+                        attn_b[l], attn_w[l], 
+                        proj_b[l], proj_w[l], 
+                        ln_1_b[l], ln_1_g[l], 
+                        ln_2_b[l], ln_2_g[l], 
+                        mlp1_b[l], mlp1_w[l], 
+                        mlp2_b[l], mlp2_w[l], 
+                        transformer_block_output);
+
+                    /* Copy output to embd for next block */
+                    copy(transformer_block_output, embd);
+                }
+
+                /* Final Layer Normalization */
+                layer_norm(embd, ln_f_g, ln_f_b);
+
+                /* Projection to vocab. dimension */
+                transpose(wte, wte_transposed_tmp);
+                linear(embd, wte_transposed_tmp, zero_vocab_tmp, logit_output);
+
+                /* Greedy sampling (only last timestep is considered) */
+                int next_token_id = greedy_sampling(logit_output);
+
+                /* Print generated token ID */
+                fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
+
+                /* Increment input prompt and N_SEQ length */
+                input_prompt.push_back(next_token_id);
+                N_SEQ += 1;
+
+                /* Store generated token to output */
+                output[p*n_token + t] = next_token_id;
+                
+                /* Re-initialize activations for next token generation */
+                finalize_activations();
+                initialize_activations();
+            } 
+
+            /* Reset N_SEQ to original size */
+            N_SEQ = prompt_size;
+
+            /* Re-initialize activations for next prompt */
             finalize_activations();
             initialize_activations();
-        } 
-
-        /* Reset N_SEQ to original size */
-        N_SEQ = prompt_size;
-
-        /* Re-initialize activations for next prompt */
-        finalize_activations();
-        initialize_activations();
+        }
     }
 }
 

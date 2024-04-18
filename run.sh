@@ -1,8 +1,12 @@
 #!bin/sh
 
-./main \
-    -i ./data/input.bin \
-    -a ./data/answer.bin \
-    -o ./output.bin \
-	-v -s -w \
-    -t 5
+mpirun --bind-to none -mca btl ^openib -npernode 4 \
+    --oversubscribe -quiet \
+    ./main \
+        -i ./data/input.bin \
+        -a ./data/answer.bin \
+        -o ./data/output.bin \
+        -v -s \
+        -t 5 \
+        -n 1 \
+        # -w \

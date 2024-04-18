@@ -57,8 +57,6 @@ void parse_args(int argc, char **argv) {
         }
     }
 
-    fprintf(stderr, "[LOG] Running...\n");
-    
     fprintf(stdout, "\n=============================================\n");
     fprintf(stdout, " Model: GPT-2 (12 layers)\n");
     fprintf(stdout, "---------------------------------------------\n");
@@ -122,4 +120,17 @@ double get_time() {
   clock_gettime(CLOCK_MONOTONIC, &tv);
 
   return tv.tv_sec + tv.tv_nsec * 1e-9;
+}
+
+int check_validation(int* output, int* answer, int size_) {
+
+    int diff = -1;
+    for (int i = 0; i < size_; i++) {
+        if (output[i] != answer[i]) {
+            diff = i;
+            break;
+        }
+    }
+
+    return diff;
 }
