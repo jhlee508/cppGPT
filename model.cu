@@ -116,6 +116,7 @@ void initialize_activations() {
 }
 
 
+/* [Model Operations] */
 /* Token + Positional Embedding
  * @param [x] input: [N_SEQ]
  * @param [wte] input: [N_VOCAB, N_EMBD]
@@ -318,6 +319,112 @@ int greedy_sampling(Tensor* x) {
     return max_idx;
 }
 
+/* Split into QKV
+ * @param [x] input: [N_SEQ, 3*N_EMBD]
+ * @param [x_out] output: [3, N_SEQ, N_EMBD]
+ */
+void split_qkv(Tensor* x, Tensor* x_out) {
+
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < N_SEQ; j++) {
+            for (int k = 0; k < N_EMBD; k++) {
+                x_out->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
+                    x->buf[j*3*N_EMBD + i*N_EMBD + k];
+            }
+        }
+    }
+}
+
+/* Split into heads
+ * @param [x] input: [3, N_SEQ, N_EMBD]
+ * @param [x_out] output: [3, N_HEAD, N_SEQ, N_EMBD/N_HEAD]
+ */
+void split_head(Tensor* x, Tensor* x_out) {
+
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < N_HEAD; j++) {
+            for (int k = 0; k < N_SEQ; k++) {
+                for (int l = 0; l < N_EMBD/N_HEAD; l++) {
+                    x_out->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
+                        j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
+                            x->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
+                }
+            }
+        }
+    }
+}
+
+/* Generate mask
+ * @param [mask] input: [N_SEQ, N_SEQ]
+ * @param [mask] output: [N_SEQ, N_SEQ]
+ */
+void generate_mask(Tensor* mask) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_SEQ; j++) {
+            if (i >= j) {
+                mask->buf[i*N_SEQ + j] = 0;
+            } else {
+                mask->buf[i*N_SEQ + j] = -1e10;
+            }
+        }
+    }
+}
+
+/* Extract Q, K, V from QKV head 
+ * @param [x] input: [3, N_HEAD, N_SEQ, N_EMBD/N_HEAD]
+ * @param [head] input: [1]
+ * @param [q] output: [N_SEQ, N_EMBD/N_HEAD]
+ * @param [k] output: [N_SEQ, N_EMBD/N_HEAD]
+ * @param [v] output: [N_SEQ, N_EMBD/N_HEAD]
+ */
+void extract_qkv(Tensor* x, int head, 
+                 Tensor* q, Tensor* k, Tensor* v) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_EMBD/N_HEAD; j++) {
+            q->buf[i*N_EMBD/N_HEAD + j] = 
+                x->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+            k->buf[i*N_EMBD/N_HEAD + j] = 
+                x->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+            v->buf[i*N_EMBD/N_HEAD + j] = 
+                x->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+        }
+    }
+}
+
+/* Merge each heads
+ * @param [x] input: [N_SEQ, N_EMBD/N_HEAD]
+ * @param [head] input: [1]
+ * @param [x_out] output: [N_HEAD, N_SEQ, N_EMBD/N_HEAD]
+ */
+void merge_head(Tensor* x, int head, 
+                Tensor* x_out) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_EMBD/N_HEAD; j++) {
+            x_out->buf[head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j] = 
+                x->buf[i*N_EMBD/N_HEAD + j];
+        }
+    }
+}
+
+/* Concatenate each heads
+ * @param [x] input: [N_HEAD, N_SEQ, N_EMBD/N_HEAD]
+ * @param [x_out] output: [N_SEQ, N_EMBD]
+ */
+void concat_head(Tensor* x, Tensor* x_out) {
+
+    for (int i = 0; i < N_SEQ; i++) {
+        for (int j = 0; j < N_HEAD; j++) {
+            for (int k = 0; k < N_EMBD/N_HEAD; k++) {
+                x_out->buf[i*N_EMBD + j*N_EMBD/N_HEAD + k] = 
+                    x->buf[j*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + k];
+            }
+        }
+    }
+}
+
 /* (Position-wise) Feed-Forward Network
  * @param [x] input: [N_SEQ, N_EMBD]
  * @param [mlp1_w] input: [N_EMBD, 4*N_EMBD]
@@ -331,13 +438,15 @@ void ffn(Tensor* x,
          Tensor* mlp2_w, Tensor* mlp2_b, 
          Tensor* x_out) {
     
-    /* Projection Up [N_SEQ, N_EMBD] -> [N_SEQ, 4*N_EMBD] */
+    /* Projection Up: 
+        [N_SEQ, N_EMBD] -> [N_SEQ, 4*N_EMBD] */
     linear(x, mlp1_w, mlp1_b, ffn_proj_output);
 
     /* GELU */
     gelu(ffn_proj_output);
 
-    /* Projection Down [N_SEQ, 4*N_EMBD] -> [N_SEQ, N_EMBD] */
+    /* Projection Down:
+        [N_SEQ, 4*N_EMBD] -> [N_SEQ, N_EMBD] */
     linear(ffn_proj_output, mlp2_w, mlp2_b, x_out);
 }
 
@@ -385,81 +494,42 @@ void mha(Tensor* x,
     Tensor* proj_b, Tensor* proj_w, 
     Tensor* x_out) {
 
-    /* QKV projection: [n_seq, n_embd] -> [n_seq, 3*n_embd]) */
+    /* QKV projection: 
+        [n_seq, n_embd] -> [n_seq, 3*n_embd]) */
     linear(x, attn_w, attn_b, mha_qkv_output);
 
-    /* Split into qkv: [n_seq, 3*n_embd] -> [3, n_seq, n_embd] */
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < N_SEQ; j++) {
-            for (int k = 0; k < N_EMBD; k++) {
-                mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + j*N_EMBD + k] = 
-                    mha_qkv_output->buf[j*3*N_EMBD + i*N_EMBD + k];
-            }
-        }
-    }
+    /* Split into qkv:
+        [n_seq, 3*n_embd] -> [3, n_seq, n_embd] */
+    split_qkv(mha_qkv_output, mha_qkv_split_tmp);
 
-    /* Split into heads: [3, n_seq, n_embd] -> [3, n_head, n_seq, n_embd/n_head] */
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < N_HEAD; j++) {
-            for (int k = 0; k < N_SEQ; k++) {
-                for (int l = 0; l < N_EMBD/N_HEAD; l++) {
-                    mha_qkv_head_tmp->buf[i*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
-                        j*N_SEQ*N_EMBD/N_HEAD + k*N_EMBD/N_HEAD + l] = 
-                            mha_qkv_split_tmp->buf[i*N_SEQ*N_EMBD + k*N_EMBD + j*N_EMBD/N_HEAD + l];
-                }
-            }
-        }
-    }
+    /* Split into heads: 
+        [3, n_seq, n_embd] -> [3, n_head, n_seq, n_embd/n_head] */
+    split_head(mha_qkv_split_tmp, mha_qkv_head_tmp);
 
     /* Generate mask to hide future inputs */
-    for (int i = 0; i < N_SEQ; i++) {
-        for (int j = 0; j < N_SEQ; j++) {
-            if (i >= j) {
-                mha_mask_tmp->buf[i*N_SEQ + j] = 0;
-            } else {
-                mha_mask_tmp->buf[i*N_SEQ + j] = -1e10;
-            }
-        }
-    }
+    generate_mask(mha_mask_tmp);
     
-    /* Perform Attention over each head [n_head, 3, n_seq, n_embd/n_head] -> [n_head, n_seq, n_embd/n_head] */
-    for (int i = 0; i < N_HEAD; i++) {
+    /* Perform Attention over each head: 
+        [n_head, 3, n_seq, n_embd/n_head] -> [n_head, n_seq, n_embd/n_head] */
+    for (int head = 0; head < N_HEAD; head++) {
 
         /* Extract q, k, v from qkv_head */
-        for (int j = 0; j < N_SEQ; j++) {
-            for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_q_tmp->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_tmp->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
-                mha_k_tmp->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_tmp->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
-                mha_v_tmp->buf[j*N_EMBD/N_HEAD + k] = 
-                    mha_qkv_head_tmp->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k];
-            }
-        }
+        extract_qkv(mha_qkv_head_tmp, head, mha_q_tmp, mha_k_tmp, mha_v_tmp);
 
         /* Attention */
         attention(mha_q_tmp, mha_k_tmp, mha_v_tmp, mha_mask_tmp, mha_attn_output);
 
-        /* Merge each head's attn output [n_seq, n_embd/n_head] -> [n_head, n_seq, n_embd/n_head] */
-        for (int j = 0; j < N_SEQ; j++) {
-            for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_merge_head_tmp->buf[i*N_SEQ*N_EMBD/N_HEAD + j*N_EMBD/N_HEAD + k] = 
-                    mha_attn_output->buf[j*N_EMBD/N_HEAD + k];
-            }
-        }
+        /* Merge each head's attn output 
+            [n_seq, n_embd/n_head] -> [n_head, n_seq, n_embd/n_head] */
+        merge_head(mha_attn_output, head, mha_merge_head_tmp);
     }
 
-    /* Concat each heads [n_head, n_seq, n_embd/n_head] -> [n_seq, n_embd] */
-    for (int i = 0; i < N_SEQ; i++) {
-        for (int j = 0; j < N_HEAD; j++) {
-            for (int k = 0; k < N_EMBD/N_HEAD; k++) {
-                mha_concat_head_tmp->buf[i*N_EMBD + j*N_EMBD/N_HEAD + k] = 
-                    mha_merge_head_tmp->buf[j*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + k];
-            }
-        }
-    }
+    /* Concat each heads: 
+        [n_head, n_seq, n_embd/n_head] -> [n_seq, n_embd] */
+    concat_head(mha_merge_head_tmp, mha_concat_head_tmp);
 
-    /* OUT projection [n_seq, n_embd] -> [n_seq, n_embd] */
+    /* OUT projection: 
+        [n_seq, n_embd] -> [n_seq, n_embd] */
     linear(mha_concat_head_tmp, proj_w, proj_b, x_out);
 }
 
@@ -514,7 +584,7 @@ void transformer_block(Tensor* x,
 }
 
 
-/* [Token Generation] */
+/* [Model Computation: Token Generation] */
 void generate_tokens(int* input, int* output, int n_prompt, int n_token) {
     int mpi_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -571,7 +641,7 @@ void generate_tokens(int* input, int* output, int n_prompt, int n_token) {
                 /* Print generated token ID */
                 fprintf(stdout, " [DEBUG] Generated token ID: %d\n", next_token_id);
 
-                /* Increment input prompt and N_SEQ length */
+                /* Update input prompt and N_SEQ length */
                 input_prompt.push_back(next_token_id);
                 N_SEQ += 1;
 
