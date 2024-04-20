@@ -105,14 +105,14 @@ int main(int argc, char **argv) {
             fprintf(stdout, " Validation... \n");
 
             int *answer = (int *)read_binary(answer_fname, NULL);
-            int diff = check_validation(output, answer, N*T);
-            if (diff == -1) {
+            int ret = check_validation(output, answer, N*T);
+            if (ret == -1) {
                 fprintf(stdout, " Validation passed!\n");
             } else {
                 fprintf(stdout, " Validation failed: First mismatch "
-                    "at prompt[#%d], token_ID[#%d] (output[%d]=%d vs. "
-                    "answer[%d]=%d)\n", diff / T, diff % T, diff, 
-                    output[diff], diff, answer[diff]);
+                    "at prompt[#%d], token_ID[#%d] (output[%d]=%d <-> "
+                    "answer[%d]=%d)\n", ret / T, ret % T, ret, 
+                    output[ret], ret, answer[ret]);
             }
         }
     }

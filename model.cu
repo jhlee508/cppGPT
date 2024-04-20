@@ -384,11 +384,14 @@ void extract_qkv(Tensor* x, int head,
     for (int i = 0; i < N_SEQ; i++) {
         for (int j = 0; j < N_EMBD/N_HEAD; j++) {
             q->buf[i*N_EMBD/N_HEAD + j] = 
-                x->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+                x->buf[0*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
+                head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
             k->buf[i*N_EMBD/N_HEAD + j] = 
-                x->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+                x->buf[1*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
+                head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
             v->buf[i*N_EMBD/N_HEAD + j] = 
-                x->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
+                x->buf[2*N_HEAD*N_SEQ*N_EMBD/N_HEAD + 
+                head*N_SEQ*N_EMBD/N_HEAD + i*N_EMBD/N_HEAD + j];
         }
     }
 }

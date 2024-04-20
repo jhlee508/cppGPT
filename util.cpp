@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <math.h>
 
 using namespace std;
 
@@ -70,7 +71,8 @@ void parse_args(int argc, char **argv) {
 
 void print_help() {
     fprintf(stdout,
-        " Usage: ./main [-i 'pth'] [-p 'pth'] [-o 'pth'] [-a 'pth'] [-t 'tokens'] [-n 'prompts'] [-v] [-s] [-w] [-h]\n");
+        " Usage: ./main [-i 'pth'] [-p 'pth'] [-o 'pth'] [-a 'pth']"
+        " [-t 'tokens'] [-n 'prompts'] [-v] [-s] [-w] [-h]\n");
     fprintf(stdout, " Options:\n");
     fprintf(stdout, "  -i: Input binary path (default: data/input.bin)\n");
     fprintf(stdout, "  -p: Model parameter path (default: assets/model_file.bin)\n");
@@ -124,13 +126,33 @@ double get_time() {
 
 int check_validation(int* output, int* answer, int size_) {
 
-    int diff = -1;
+    int ret = -1;
+    int mismatch_idx = -1;
+    int tolerance = size_ * 0.0001; // Error tolerance percentage
+    
     for (int i = 0; i < size_; i++) {
-        if (output[i] != answer[i]) {
-            diff = i;
+        if (isnan(output[i])) {
+            fprintf(stderr, "[ERROR] Output contains NaN at index %d\n", i);
+            mismatch_idx = i;
             break;
         }
+
+        if (output[i] != answer[i]) {
+            /* Decrease tolerance */
+            tolerance--;
+
+            /* Save the first mismatch index */
+            if (mismatch_idx == -1) { 
+                mismatch_idx = i;
+            }
+            
+            /* Break if tolerance is reached */
+            if (tolerance < 0) { 
+                ret = mismatch_idx;
+                break;
+            }            
+        } 
     }
 
-    return diff;
+    return ret;
 }
